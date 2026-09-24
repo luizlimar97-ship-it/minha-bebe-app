@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#ef5b91">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Minha Bebê">
+<title>Minha Bebê</title>
+<style>
+:root{--pink:#ef5b91;--pink2:#ffe7f0;--blue:#3c8bd9;--bg:#f8f9fc;--text:#263247;--muted:#748096;--card:#fff;--line:#e7eaf0}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--text)}
+.app{max-width:520px;margin:auto;min-height:100vh;background:var(--bg);padding-bottom:78px}
+header{padding:18px 18px 10px;background:#fff;position:sticky;top:0;z-index:5;border-bottom:1px solid var(--line)}
+h1,h2,h3,p{margin:0}h1{font-size:24px}.sub{color:var(--muted);font-size:13px;margin-top:3px}
+main{padding:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;margin-bottom:12px;box-shadow:0 3px 12px #2538580b}
+.profile{display:flex;gap:12px;align-items:center}.avatar{width:58px;height:58px;border-radius:50%;background:var(--pink2);display:grid;place-items:center;font-size:30px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{padding:12px;border-radius:14px;background:#faf4f7}
+.event{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.event:last-child{border:0}
+.icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:var(--pink2);font-size:20px}.event small{color:var(--muted)}
+button{border:0;border-radius:12px;padding:11px 14px;background:var(--pink);color:#fff;font-weight:700;cursor:pointer}button.secondary{background:#f0f2f7;color:var(--text)}button.danger{background:#ffe5e5;color:#c33}
+input,select,textarea{width:100%;padding:12px;border:1px solid var(--line);border-radius:11px;background:#fff;font:inherit;margin-top:5px}label{display:block;font-size:13px;font-weight:650;margin:10px 0}
+.form-actions{display:flex;gap:8px;margin-top:14px}.form-actions button{flex:1}
+nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:min(520px,100%);height:70px;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;z-index:10}
+nav button{background:none;color:var(--muted);border-radius:0;padding:8px 5px;font-size:11px}.navactive{color:var(--pink)!important;font-weight:800}
+.listrow{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}.listrow:last-child{border-bottom:0}
+.badge{font-size:11px;padding:5px 8px;border-radius:20px;background:#e3f7ec;color:#25834f}.empty{text-align:center;color:var(--muted);padding:28px 10px}
+canvas{width:100%;height:180px;background:#fff;border:1px solid var(--line);border-radius:12px}
+.toast{position:fixed;bottom:82px;left:50%;transform:translateX(-50%);background:#263247;color:#fff;padding:11px 16px;border-radius:12px;display:none;z-index:20}
+</style>
+</head>
+<body>
+<div class="app">
+<header><h1>👶 Minha Bebê</h1><div class="sub">Organização da rotina da sua bebê</div></header>
+<main id="view"></main>
+<nav>
+<button data-tab="home">🏠<br>Início</button>
+<button data-tab="agenda">📅<br>Agenda</button>
+<button data-tab="vacinas">💉<br>Vacinas</button>
+<button data-tab="consultas">🩺<br>Consultas</button>
+<button data-tab="mais">☰<br>Mais</button>
+</nav>
+</div>
+<div id="toast" class="toast"></div>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script>
+const KEY='minhaBebeV1';
+function normalizeDb(d){d=(d&&typeof d==='object')?d:{};d.baby=d.baby||{name:'',birth:'',birthtime:'',weight:'',height:'',head:''};d.vaccines=Array.isArray(d.vaccines)?d.vaccines:[];d.appointments=Array.isArray(d.appointments)?d.appointments:[];d.reminders=Array.isArray(d.reminders)?d.reminders:[];d.growth=Array.isArray(d.growth)?d.growth:[];d.docs=Array.isArray(d.docs)?d.docs:[];return d}
+let db;try{db=normalizeDb(JSON.parse(localStorage.getItem(KEY)||'null'))}catch(e){db=normalizeDb(null)}
+
+/* ===== Sincronização em família (Firebase) =====
+   1) Crie um projeto grátis em https://console.firebase.google.com
+   2) Ative "Firestore Database" (modo produção) e aplique esta regra em Regras:
+        rules_version = '2';
+        service cloud.firestore {
+          match /databases/{database}/documents {
+            match /families/{code} { allow read, write: if true; }
+          }
+        }
+      (aviso: quem souber o código de família consegue ler/editar — não compartilhe o código, só entre vocês dois)
+   3) Em Configurações do projeto > Seus apps > Web, copie o objeto de config e cole abaixo. */
+const firebaseConfig={apiKey:"SUA_API_KEY",authDomain:"SEU_PROJETO.firebaseapp.com",projectId:"SEU_PROJETO",storageBucket:"SEU_PROJETO.appspot.com",messagingSenderId:"SEU_ID",appId:"SEU_APP_ID"};
+let fbApp=null,fbDoc=null,fbUnsub=null,applyingRemote=false,curTab='home';
+if(typeof firebase!=='undefined'&&firebaseConfig.apiKey&&firebaseConfig.apiKey!=='SUA_API_KEY'){try{fbApp=firebase.initializeApp(firebaseConfig)}catch(e){}}
+function firebaseReady(){return !!fbApp}
+function familyCodeKey(){return 'minhaBebeFamilyCode'}
+function getFamilyCode(){return localStorage.getItem(familyCodeKey())||''}
+function generateFamilyCode(){return 'familia-'+Math.random().toString(36).slice(2,8)}
+function startListening(){if(!fbDoc)return;fbUnsub=fbDoc.onSnapshot(snap=>{if(!snap.exists)return;let data=snap.data();applyingRemote=true;db=normalizeDb(data.db);localStorage.setItem(KEY,JSON.stringify(db));applyingRemote=false;route(curTab)},()=>{})}
+function connectFamily(code){if(!firebaseReady()){toast('Configure o Firebase no código antes de conectar');return}if(!code){toast('Informe um código de família');return}localStorage.setItem(familyCodeKey(),code);fbDoc=firebase.firestore().collection('families').doc(code);fbDoc.get().then(snap=>{if(snap.exists){if(confirm('Já existem dados salvos para este código. Importar esses dados agora? (isso substitui os dados deste aparelho)')){applyingRemote=true;db=normalizeDb(snap.data().db);localStorage.setItem(KEY,JSON.stringify(db));applyingRemote=false}}else{fbDoc.set({db:db,updatedAt:Date.now()})}startListening();toast('Conectado! Os dados agora sincronizam automaticamente.');more()}).catch(err=>{toast('Não foi possível conectar: '+err.message)})}
+function disconnectFamily(){if(fbUnsub)fbUnsub();fbDoc=null;localStorage.removeItem(familyCodeKey());toast('Sincronização desativada neste aparelho');more()}
+
+function save(){try{localStorage.setItem(KEY,JSON.stringify(db))}catch(e){toast('Armazenamento cheio — não foi possível salvar. Remova algum anexo grande.');return}if(fbDoc&&!applyingRemote){fbDoc.set({db:db,updatedAt:Date.now()}).catch(()=>{toast('Não sincronizou com a família (dado grande demais?)')})}}
+function toast(t){let e=document.getElementById('toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2200)}
+function age(){if(!db.baby.birth)return 'Cadastre a data de nascimento';let d=new Date(db.baby.birth+'T00:00:00'),n=new Date();let days=Math.max(0,Math.floor((n-d)/86400000));if(days<30)return days+' dias de vida';let m=(n.getFullYear()-d.getFullYear())*12+n.getMonth()-d.getMonth();if(n.getDate()<d.getDate())m--;return m+' meses de vida'}
+function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+function layout(content,title='',back='home'){document.getElementById('view').innerHTML=title?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><button class="secondary" onclick="${back}()">←</button><h2>${title}</h2></div>${content}`:content}
+function home(){
+let b=db.baby, events=[...db.appointments.map(x=>({...x,type:'🩺',date:x.date,label:x.specialty||'Consulta'})),...db.vaccines.filter(x=>x.status!=='aplicada').map(x=>({...x,type:'💉',label:x.name,date:x.due}))].filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);
+layout(`<div class="card profile"><div class="avatar">👶</div><div><h2>${esc(b.name||'Sua bebê')}</h2><div class="sub">${age()}</div><div class="sub">${b.weight?b.weight+' kg':''} ${b.height?' • '+b.height+' cm':''}</div></div></div>
+<div class="card"><h3>🔔 Próximos eventos</h3>${events.length?events.map(e=>{let ts=new Date().toISOString().slice(0,10);let atrasado=e.date<ts;return `<div class="event"><div class="icon">${e.type}</div><div><b>${esc(e.label)}</b><br><small>${atrasado?'⚠️ ':''}${esc(e.date)}${e.time?' • '+e.time:''}</small></div></div>`}).join(''):'<div class="empty">Nenhum evento cadastrado.</div>'}</div>
+<div class="card"><h3>📋 Tarefas</h3>${(()=>{let pend=db.reminders.map((r,i)=>({...r,i})).filter(x=>!x.done).slice(0,4);return pend.length?pend.map(r=>`<div class="listrow"><span>☐ ${esc(r.title)}</span><button class="secondary" onclick="doneReminder(${r.i})">Concluir</button></div>`).join(''):'<div class="empty">Nenhuma tarefa pendente.</div>'})()}</div>
+<div class="grid"><button onclick="profile()">👶 Perfil</button><button onclick="reminders()">🔔 Lembretes</button></div>`);
+document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('navactive',x.dataset.tab==='home'))
+}
+function profile(){layout(`<div class="card"><label>Nome da bebê<input id="bn" value="${esc(db.baby.name)}"></label><label>Data de nascimento<input id="bd" type="date" value="${db.baby.birth}"></label><label>Hora de nascimento<input id="bt" type="time" value="${db.baby.birthtime}"></label><div class="grid"><label>Peso ao nascer<input id="bw" placeholder="3,400" value="${esc(db.baby.weight)}"></label><label>Altura (cm)<input id="bh" placeholder="49" value="${esc(db.baby.height)}"></label></div><label>Perímetro cefálico (cm)<input id="bc" placeholder="34" value="${esc(db.baby.head)}"></label><div class="form-actions"><button onclick="saveProfile()">Salvar</button></div></div>`,'Cadastro da bebê')}
+function saveProfile(){if(!bn.value.trim()){toast('Informe o nome da bebê');return}if(!bd.value){toast('Informe a data de nascimento');return}db.baby={name:bn.value,birth:bd.value,birthtime:bt.value,weight:bw.value,height:bh.value,head:bc.value};save();toast('Perfil salvo');home()}
+function agenda(){layout(`<div class="card"><button onclick="newAppointment()">＋ Nova consulta</button></div>${db.appointments.length?db.appointments.map((x,i)=>`<div class="card"><div class="listrow"><div><b>🩺 ${esc(x.specialty)}</b><br><small>${esc(x.date)} • ${esc(x.time||'')}<br>${esc(x.location||'')}</small></div><button class="danger" onclick="deleteAppointment(${i})">Excluir</button></div></div>`).join(''):'<div class="card empty">Nenhuma consulta cadastrada.</div>'}`,'Calendário / Agenda');document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('navactive',x.dataset.tab==='agenda'))}
+function newAppointment(){layout(`<div class="card"><label>Especialidade<input id="as" value="Pediatra"></label><label>Data<input id="ad" type="date"></label><label>Horário<input id="at" type="time"></label><label>Local<input id="al"></label><label>Observações<textarea id="ao"></textarea></label><label>Alertas<select id="aa"><option>7, 3 e 1 dia antes</option><option>1 dia antes</option><option>2 horas antes</option></select></label><p class="sub">Por enquanto isso fica só como anotação — o alerta automático ainda não dispara notificação sozinho.</p><button onclick="saveAppointment()">Salvar consulta</button></div>`,'Nova consulta','agenda')}
+function saveAppointment(){if(!ad.value){toast('Informe a data da consulta');return}db.appointments.push({specialty:as.value,date:ad.value,time:at.value,location:al.value,notes:ao.value,alert:aa.value});save();toast('Consulta salva');agenda()}
+function deleteAppointment(i){if(confirm('Excluir esta consulta?')){db.appointments.splice(i,1);save();agenda()}}
+const PNI_CALENDAR=[
+{name:'Hepatite B',dose:'Dose única (ao nascer)',months:0},
+{name:'BCG',dose:'Dose única',months:0},
+{name:'Pentavalente (DTP+Hib+HB)',dose:'1ª dose',months:2},
+{name:'VIP (poliomielite inativada)',dose:'1ª dose',months:2},
+{name:'Rotavírus',dose:'1ª dose',months:2},
+{name:'Pneumocócica 20-valente',dose:'1ª dose',months:2},
+{name:'Meningocócica C',dose:'1ª dose',months:3},
+{name:'Pentavalente (DTP+Hib+HB)',dose:'2ª dose',months:4},
+{name:'VIP (poliomielite inativada)',dose:'2ª dose',months:4},
+{name:'Rotavírus',dose:'2ª dose',months:4},
+{name:'Pneumocócica 20-valente',dose:'2ª dose',months:4},
+{name:'Meningocócica C',dose:'2ª dose',months:5},
+{name:'Pentavalente (DTP+Hib+HB)',dose:'3ª dose',months:6},
+{name:'VIP (poliomielite inativada)',dose:'3ª dose',months:6},
+{name:'Febre amarela',dose:'1ª dose',months:9},
+{name:'Pneumocócica 20-valente',dose:'Reforço',months:12},
+{name:'Meningocócica ACWY',dose:'Dose única',months:12},
+{name:'Tríplice viral (SCR)',dose:'1ª dose',months:12},
+{name:'DTP',dose:'1º reforço',months:15},
+{name:'VIP (poliomielite inativada)',dose:'1º reforço',months:15},
+{name:'Tríplice viral (SCR)',dose:'2ª dose',months:15},
+{name:'Varicela',dose:'1ª dose',months:15},
+{name:'Hepatite A',dose:'Dose única',months:15},
+{name:'DTP',dose:'2º reforço',months:48},
+{name:'VIP (poliomielite inativada)',dose:'2º reforço',months:48},
+{name:'Varicela',dose:'2ª dose',months:48},
+{name:'Febre amarela',dose:'Reforço',months:48}
+];
+function addMonths(dateStr,n){let d=new Date(dateStr+'T00:00:00');d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,10)}
+function generateVaccineCalendar(){if(!db.baby.birth){toast('Cadastre a data de nascimento no Perfil primeiro');return}if(db.vaccines.some(v=>v.auto)){if(!confirm('Já existe um calendário gerado automaticamente. Substituir pelas datas atuais?'))return;db.vaccines=db.vaccines.filter(v=>!v.auto)}PNI_CALENDAR.forEach(item=>{db.vaccines.push({name:item.name+' — '+item.dose,status:'pendente',date:'',due:addMonths(db.baby.birth,item.months),notes:'',auto:true})});db.vaccines.sort((a,b)=>(a.due||'').localeCompare(b.due||''));save();toast('Calendário de vacinas gerado');vaccines()}
+function markVaccineApplied(i){let d=prompt('Data em que foi aplicada (AAAA-MM-DD):',new Date().toISOString().slice(0,10));if(d===null)return;db.vaccines[i].status='aplicada';db.vaccines[i].date=d;save();vaccines()}
+function vaccines(){let v=db.vaccines;let today=new Date().toISOString().slice(0,10);layout(`<div class="card"><p class="sub">Calendário baseado no Calendário Nacional de Vacinação (PNI) 2026. Sempre confirme com a caderneta de vacinação e o pediatra — datas podem variar por estado/UBS.</p>${db.baby.birth?`<button style="margin-top:10px" onclick="generateVaccineCalendar()">📅 Gerar calendário automático</button>`:`<p class="sub" style="margin-top:10px">Cadastre a data de nascimento no Perfil para gerar o calendário automático.</p>`}</div><div class="card"><h3>💉 Vacinas</h3>${v.length?v.map((x,i)=>{let atrasada=x.status!=='aplicada'&&x.due&&x.due<today;return `<div class="listrow"><div><b>${esc(x.name)}</b><br><small>${x.status==='aplicada'?'Aplicada em '+esc(x.date):'Prevista: '+esc(x.due||'-')}</small></div><div style="display:flex;gap:6px;align-items:center">${x.status!=='aplicada'?`<button class="secondary" onclick="markVaccineApplied(${i})">✓</button>`:''}<span class="badge"${atrasada?' style="background:#ffe0e0;color:#c0392b"':''}>${x.status==='aplicada'?'Aplicada':atrasada?'Atrasada':'Pendente'}</span><button class="danger" onclick="deleteVaccine(${i})">✕</button></div></div>`}).join(''):'<div class="empty">Nenhuma vacina cadastrada.</div>'}</div><div class="card"><button onclick="newVaccine()">＋ Registrar vacina manual</button></div>`,'Vacinas');document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('navactive',x.dataset.tab==='vacinas'))}
+function deleteVaccine(i){if(confirm('Excluir este registro de vacina?')){db.vaccines.splice(i,1);save();vaccines()}}
+function newVaccine(){layout(`<div class="card"><label>Nome da vacina<input id="vn" placeholder="Ex.: BCG"></label><label>Situação<select id="vs"><option value="pendente">Pendente</option><option value="aplicada">Aplicada</option></select></label><label>Data<input id="vd" type="date"></label><label>Observações<textarea id="vo"></textarea></label><button onclick="saveVaccine()">Salvar</button></div>`,'Registrar vacina','vaccines')}
+function saveVaccine(){if(!vn.value.trim()){toast('Informe o nome da vacina');return}db.vaccines.push({name:vn.value,status:vs.value,date:vd.value,due:vd.value,notes:vo.value});save();toast('Vacina registrada');vaccines()}
+function consultations(){agenda();document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('navactive',x.dataset.tab==='consultas'))}
+function reminders(){layout(`<div class="card"><button onclick="newReminder()">＋ Novo lembrete</button></div>${db.reminders.length?db.reminders.map((r,i)=>`<div class="card"><div class="listrow"><div><b>${r.done?'✅':'⬜'} ${esc(r.title)}</b><br><small>${esc(r.date||'')} ${esc(r.time||'')}</small></div><div style="display:flex;gap:6px"><button class="secondary" onclick="doneReminder(${i},true)">${r.done?'Desfazer':'Concluir'}</button><button class="danger" onclick="deleteReminder(${i})">✕</button></div></div></div>`).join(''):'<div class="card empty">Nenhum lembrete.</div>'}`,'Lembretes')}
+function newReminder(){layout(`<div class="card"><label>Título<input id="rt" placeholder="Ex.: Comprar fraldas"></label><label>Data<input id="rd" type="date"></label><label>Hora<input id="rh" type="time"></label><label>Repetir<select id="rr"><option>Nunca</option><option>Diário</option><option>Semanal</option><option>Mensal</option></select></label><button onclick="saveReminder()">Salvar</button></div>`,'Novo lembrete','reminders')}
+function saveReminder(){if(!rt.value.trim()){toast('Informe o título do lembrete');return}db.reminders.push({title:rt.value,date:rd.value,time:rh.value,repeat:rr.value,done:false});save();toast('Lembrete salvo');reminders()}
+function doneReminder(i,fromReminders){db.reminders[i].done=!db.reminders[i].done;save();fromReminders?reminders():home()}
+function deleteReminder(i){if(confirm('Excluir este lembrete?')){db.reminders.splice(i,1);save();reminders()}}
+function growth(){layout(`<div class="card"><h3>📏 Crescimento</h3><p class="sub">Registro de peso, altura e perímetro cefálico.</p><button style="margin-top:12px" onclick="newGrowth()">＋ Registrar medida</button></div>${db.growth.length?`<div class="card">${db.growth.map((g,i)=>`<div class="listrow"><span><b>${esc(g.date)}</b><br><small>${esc(g.weight||'-')} kg • ${esc(g.height||'-')} cm • ${esc(g.head||'-')} cm</small></span><button class="danger" onclick="deleteGrowth(${i})">✕</button></div>`).join('')}</div>`:'<div class="card empty">Ainda não há medidas registradas.</div>'}`,'Crescimento','more')}
+function newGrowth(){layout(`<div class="card"><label>Data<input id="gd" type="date"></label><div class="grid"><label>Peso (kg)<input id="gw"></label><label>Altura (cm)<input id="gh"></label></div><label>Perímetro cefálico (cm)<input id="gc"></label><button onclick="saveGrowth()">Salvar medida</button></div>`,'Registrar crescimento','growth')}
+function saveGrowth(){if(!gd.value){toast('Informe a data da medida');return}db.growth.push({date:gd.value,weight:gw.value,height:gh.value,head:gc.value});db.growth.sort((a,b)=>a.date.localeCompare(b.date));save();toast('Medida salva');growth()}
+function deleteGrowth(i){if(confirm('Excluir esta medida?')){db.growth.splice(i,1);save();growth()}}
+function documents(){layout(`<div class="card"><p class="sub">Guarde os documentos importantes da bebê, com foto ou PDF anexado.</p><button style="margin-top:12px" onclick="newDoc()">＋ Adicionar documento</button></div>${db.docs.length?db.docs.map((d,i)=>`<div class="card"><div class="listrow"><div style="display:flex;gap:10px;align-items:center">${d.fileType&&d.fileType.indexOf('image/')===0?`<img src="${d.fileData}" style="width:44px;height:44px;object-fit:cover;border-radius:10px;flex:none">`:`<div class="icon">${d.fileData?'📎':'📄'}</div>`}<div><b>${esc(d.title)}</b><br><small>${esc(d.category)}</small></div></div><div style="display:flex;gap:6px">${d.fileData?`<button class="secondary" onclick="viewDoc(${i})">Ver</button>`:''}<button class="danger" onclick="deleteDoc(${i})">Excluir</button></div></div></div>`).join(''):'<div class="card empty">Nenhum documento cadastrado.</div>'}`,'Documentos','more')}
+function dataUrlToBlob(dataUrl){let parts=dataUrl.split(',');let mime=parts[0].match(/:(.*?);/)[1];let bin=atob(parts[1]);let arr=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return new Blob([arr],{type:mime})}
+function viewDoc(i){let d=db.docs[i];if(!d.fileData){toast('Nenhum arquivo anexado a este documento');return}let url=URL.createObjectURL(dataUrlToBlob(d.fileData));window.open(url,'_blank')}
+function deleteDoc(i){if(confirm('Excluir este documento?')){db.docs.splice(i,1);save();documents()}}
+function newDoc(){layout(`<div class="card"><label>Nome do documento<input id="dn" placeholder="Ex.: Certidão de nascimento"></label><label>Categoria<select id="dc"><option>Certidão de nascimento</option><option>Carteirinha de vacinação</option><option>Exames</option><option>Receitas</option><option>Documentos do hospital</option><option>Outro</option></select></label><label>Foto ou PDF (opcional)<input id="df" type="file" accept="image/*,application/pdf"></label><p class="sub">O arquivo fica salvo neste aparelho. Prefira arquivos de até 2MB — muitos anexos grandes podem lotar o armazenamento do navegador (e não sincronizam bem com a família).</p><button onclick="saveDoc()">Salvar</button></div>`,'Adicionar documento','documents')}
+function saveDoc(){if(!dn.value.trim()){toast('Informe o nome do documento');return}let title=dn.value,category=dc.value,file=df.files[0];function finish(fileData,fileType,fileName){db.docs.push({title:title,category:category,fileData:fileData||'',fileType:fileType||'',fileName:fileName||''});save();toast('Documento salvo');documents()}if(file){if(file.size>2*1024*1024){toast('Arquivo muito grande (máx. 2MB)');return}let reader=new FileReader();reader.onload=e=>finish(e.target.result,file.type,file.name);reader.onerror=()=>toast('Não foi possível ler o arquivo');reader.readAsDataURL(file)}else{finish()}}
+function more(){layout(`<div class="card"><div class="profile"><div class="avatar">👶</div><div><b>${esc(db.baby.name||'Sua bebê')}</b><div class="sub">${age()}</div></div></div></div><div class="card"><div class="listrow"><span>👶 Perfil da bebê</span><button class="secondary" onclick="profile()">Abrir</button></div><div class="listrow"><span>📏 Crescimento</span><button class="secondary" onclick="growth()">Abrir</button></div><div class="listrow"><span>📄 Documentos</span><button class="secondary" onclick="documents()">Abrir</button></div></div><div class="card"><button onclick="requestNotify()">🔔 Ativar notificações</button></div><div class="card"><h3>💾 Backup</h3><p class="sub">Os dados ficam salvos só neste navegador. Exporte um backup de vez em quando para não correr o risco de perder tudo.</p><div class="form-actions"><button onclick="exportBackup()">Exportar backup</button><button class="secondary" onclick="document.getElementById('importFile').click()">Importar backup</button></div><input type="file" id="importFile" accept="application/json" style="display:none" onchange="importBackup(this.files[0])"></div><div class="card"><h3>👨‍👩‍👧 Compartilhar com a família</h3>${getFamilyCode()?`<p class="sub">Sincronização ativa com o código <b>${esc(getFamilyCode())}</b>. Use o mesmo código no app da sua esposa para que os dois vejam as mesmas informações.</p><button class="secondary" onclick="disconnectFamily()">Desconectar</button>`:`<p class="sub">Crie ou digite um código de família para sincronizar os dados em tempo real com sua esposa (é preciso configurar o Firebase antes — veja o comentário no início do código-fonte).</p><label>Código da família<input id="famCode" placeholder="Ex.: familia-silva2026"></label><div class="form-actions"><button onclick="connectFamily(famCode.value.trim())">Conectar</button><button class="secondary" onclick="famCode.value=generateFamilyCode()">Gerar código</button></div>`}</div>`,'Mais');document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('navactive',x.dataset.tab==='mais'))}
+async function requestNotify(){if('Notification' in window){let p=await Notification.requestPermission();toast(p==='granted'?'Notificações ativadas':'Permissão não concedida')}else toast('Seu navegador não suporta notificações')}
+function exportBackup(){let blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});let url=URL.createObjectURL(blob);let a=document.createElement('a');a.href=url;a.download='minha-bebe-backup-'+(new Date().toISOString().slice(0,10))+'.json';a.click();URL.revokeObjectURL(url);toast('Backup exportado')}
+function importBackup(file){if(!file)return;let reader=new FileReader();reader.onload=function(e){try{let data=JSON.parse(e.target.result);if(!data||typeof data!=='object'||!('baby' in data)){toast('Arquivo inválido');return}if(!confirm('Importar este backup vai substituir os dados atuais. Continuar?'))return;db=normalizeDb(data);save();toast('Backup importado');home()}catch(err){toast('Não foi possível ler o arquivo')}};reader.readAsText(file)}
+function route(t){curTab=t;if(t==='home')home();else if(t==='agenda')agenda();else if(t==='vacinas')vaccines();else if(t==='consultas')consultations();else more()}
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>route(b.dataset.tab));
+home();
+if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{})})}
+if(firebaseReady()&&getFamilyCode()){fbDoc=firebase.firestore().collection('families').doc(getFamilyCode());startListening()}
+</script>
+</body></html>

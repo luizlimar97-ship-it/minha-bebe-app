@@ -1,0 +1,17 @@
+{
+  "name": "Minha Bebê",
+  "short_name": "Minha Bebê",
+  "description": "Controle de consultas, vacinas, crescimento e documentos da bebê.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f9fc",
+  "theme_color": "#ef5b91",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
